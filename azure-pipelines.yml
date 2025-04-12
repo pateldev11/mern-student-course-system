@@ -82,7 +82,7 @@ stages:
       steps:
         - task: CopyFiles@2
           inputs:
-            contents: '/build/'
+            contents: '**/build/**'
             targetFolder: '$(Build.ArtifactStagingDirectory)'
           displayName: 'Copy Files to Artifact Staging'
 
@@ -129,8 +129,12 @@ stages:
         runOnce:
           deploy:
             steps:
+              - download: current
+                artifact: drop
+
               - script: |
-                  echo "Mock deploy to QAT environment"
+                  echo "Deploying to QAT Environment"
+                  ls $(Pipeline.Workspace)/drop/build
                 displayName: 'Mock QAT Deployment'
 
 # ------------------------------
@@ -147,8 +151,12 @@ stages:
         runOnce:
           deploy:
             steps:
+              - download: current
+                artifact: drop
+
               - script: |
-                  echo "Mock deploy to Staging environment"
+                  echo "Deploying to Staging Environment"
+                  ls $(Pipeline.Workspace)/drop/build
                 displayName: 'Mock Staging Deployment'
 
 # ------------------------------
@@ -165,6 +173,10 @@ stages:
         runOnce:
           deploy:
             steps:
+              - download: current
+                artifact: drop
+
               - script: |
-                  echo "Mock deploy to Production environment"
+                  echo "Deploying to Production Environment"
+                  ls $(Pipeline.Workspace)/drop/build
                 displayName: 'Mock Production Deployment'
