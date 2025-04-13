@@ -1,0 +1,167 @@
+trigger:
+  branches:
+    include:
+      - main
+
+variables:
+  buildConfiguration: 'Release'
+  sonarProjectKey: 'your_project_key'
+  sonarProjectName: 'YourProjectName'
+  sonarOrganization: 'your_org'
+
+stages:
+# ------------------------------
+# Stage 1: Build Stage
+# ------------------------------
+- stage: Build
+  displayName: 'Build Stage'
+  jobs:
+    - job: BuildJob
+      pool:
+        vmImage: 'ubuntu-latest'
+      steps:
+        - checkout: self
+
+        - task: NodeTool@0
+          inputs:
+            versionSpec: '18.x'
+          displayName: 'Use Node.js'
+
+# ------------------------------
+# Stage 2: SonarQube Analysis
+# ------------------------------
+- stage: SonarQube
+  displayName: 'Code Analysis Stage'
+  dependsOn: Build
+  condition: succeeded()
+  jobs:
+    - job: SonarQubeJob
+      pool:
+        vmImage: 'ubuntu-latest'
+      steps:
+        - task: SonarQubePrepare@5
+          inputs:
+            SonarQube: 'SonarQubeServiceConnection'
+            scannerMode: 'CLI'
+            configMode: 'manual'
+            cliProjectKey: '$(sonarProjectKey)'
+            cliProjectName: '$(sonarProjectName)'
+            extraProperties: |
+              sonar.sources=.
+              sonar.javascript.lcov.reportPaths=coverage/lcov.info
+
+        - script: |
+            echo "Listing files in frontend folder"
+            ls -al
+            npm install
+            npm run test -- --coverage
+          workingDirectory: frontend
+          displayName: 'Run Unit Tests and Generate Coverage Report'
+
+        - task: SonarQubeAnalyze@5
+          displayName: 'Run SonarQube Analysis'
+
+        - task: SonarQubePublish@5
+          inputs:
+            pollingTimeoutSec: '300'
+          displayName: 'Publish SonarQube Results'
+
+# ------------------------------
+# Stage 3: Artifact Generation
+# ------------------------------
+- stage: Package
+  displayName: 'Artifact Generation'
+  dependsOn: SonarQube
+  condition: succeeded()
+  jobs:
+    - job: PackageJob
+      pool:
+        vmImage: 'ubuntu-latest'
+      steps:
+        - task: CopyFiles@2
+          inputs:
+            contents: '**/build/**'
+            targetFolder: '$(Build.ArtifactStagingDirectory)'
+          displayName: 'Copy Files to Artifact Staging'
+
+        - task: PublishBuildArtifacts@1
+          inputs:
+            PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+            ArtifactName: 'drop'
+            publishLocation: 'Container'
+          displayName: 'Publish Artifact'
+
+# ------------------------------
+# Stage 4–7: Deployments
+# ------------------------------
+- stage: DeployDev
+  displayName: 'Deploy to Development'
+  dependsOn: Package
+  condition: succeeded()
+  jobs:
+    - deployment: DevDeploy
+      environment: 'dev'
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+              - download: current
+                artifact: drop
+              - script: |
+                  echo "Deploying to Development on Port 3000"
+                  ls $(Pipeline.Workspace)/drop/build
+                displayName: 'Mock Deployment for Dev'
+
+- stage: DeployQAT
+  displayName: 'Deploy to QAT Environment'
+  dependsOn: DeployDev
+  condition: succeeded()
+  jobs:
+    - deployment: QATDeploy
+      environment: 'qat'
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+              - download: current
+                artifact: drop
+              - script: |
+                  echo "Deploying to QAT Environment"
+                  ls $(Pipeline.Workspace)/drop/build
+                displayName: 'Mock QAT Deployment'
+
+- stage: DeployStaging
+  displayName: 'Deploy to Staging Environment'
+  dependsOn: DeployQAT
+  condition: succeeded()
+  jobs:
+    - deployment: StagingDeploy
+      environment: 'staging'
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+              - download: current
+                artifact: drop
+              - script: |
+                  echo "Deploying to Staging Environment"
+                  ls $(Pipeline.Workspace)/drop/build
+                displayName: 'Mock Staging Deployment'
+
+- stage: DeployProd
+  displayName: 'Deploy to Production Environment'
+  dependsOn: DeployStaging
+  condition: succeeded()
+  jobs:
+    - deployment: ProdDeploy
+      environment: 'production'
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+              - download: current
+                artifact: drop
+              - script: |
+                  echo "Deploying to Production Environment"
+                  ls $(Pipeline.Workspace)/drop/build
+                displayName: 'Mock Production Deployment'
